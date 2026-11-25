@@ -141,7 +141,8 @@ final class InputRouter: @unchecked Sendable {
         }
         lock.broadcast()
     }
-    func filter(_ type: CGEventType, _ event: CGEvent) -> Unmanaged<CGEvent>? {
+    func filter(_ type: CGEventType, _ event: CGEvent,
+                waitForEdge: (NSCondition, Date) -> Bool = { $0.wait(until: $1) }) -> Unmanaged<CGEvent>? {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             releaseAll()
             lock.lock(); let tap = self.tap; lock.unlock()
@@ -165,7 +166,7 @@ final class InputRouter: @unchecked Sendable {
         // The HID callback runs on inputQueue and signals this condition. A
         // physical keyboard's unmatched function key always passes through.
         while matchingEdge() == nil, !stopping {
-            if !lock.wait(until: deadline) { break }
+            if !waitForEdge(lock, deadline) { break }
         }
         guard let index = matchingEdge() else { return Unmanaged.passUnretained(event) }
         edges.remove(at: index)

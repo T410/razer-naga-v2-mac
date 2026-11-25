@@ -1,72 +1,50 @@
-name: Release DMG
+name: Release
 
 on:
-  release:
-    types: [published]
+  push:
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: release-dmg-${{ github.event.release.id }}
+  group: release-main
   cancel-in-progress: false
 
 jobs:
-  package:
-    name: Build and upload Apple Silicon DMG
+  release:
+    if: github.ref == 'refs/heads/main'
+    name: Release
     runs-on: macos-26
-    timeout-minutes: 20
+    timeout-minutes: 25
+    permissions:
+      contents: write
     env:
       DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
-      RELEASE_TAG: ${{ github.event.release.tag_name }}
     steps:
-      - name: Check out the release commit
+      - name: Check out main and release tags
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.sha }}
+          fetch-depth: 0
           persist-credentials: false
 
-      - name: Set the release version
-        id: version
-        shell: python
-        run: |
-          import os
-          import plistlib
-          import re
-          from pathlib import Path
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
 
-          version = os.environ["RELEASE_TAG"].removeprefix("v")
-          match = re.fullmatch(
-              r"((?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*))"
-              r"(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?", version
-          )
-          if not match:
-              raise SystemExit("Use a release tag such as v0.1.2 or v0.1.2-beta.1.")
-          plist_path = Path("Resources/Info.plist")
-          info = plistlib.loads(plist_path.read_bytes())
-          info["CFBundleShortVersionString"] = match.group(1)
-          info["CFBundleVersion"] = os.environ["GITHUB_RUN_NUMBER"]
-          plist_path.write_bytes(plistlib.dumps(info, sort_keys=False))
-          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
-              output.write(f"version={version}\n")
+      - name: Install release tooling
+        run: npm ci --ignore-scripts --no-audit --no-fund
 
-      - name: Run tests
+      - name: Test release tooling
+        run: npm run test:release
+
+      - name: Run Swift tests
         run: swift test
 
-      - name: Build and verify the DMG
+      - name: Version, build and publish the release
         env:
-          NAGA_DMG_FILE: ${{ github.workspace }}/build/Razer NAGA v2-${{ steps.version.outputs.version }}-arm64.dmg
-        run: |
-          zsh Scripts/package-dmg.sh
-          lipo -verify_arch arm64 "build/Razer NAGA v2.app/Contents/MacOS/Naga"
-          cd build
-          shasum -a 256 -c "${NAGA_DMG_FILE##*/}.sha256"
-
-      - name: Upload release assets
-        env:
-          GH_TOKEN: ${{ github.token }}
-          NAGA_DMG_FILE: ${{ github.workspace }}/build/Razer NAGA v2-${{ steps.version.outputs.version }}-arm64.dmg
-        run: |
-          gh release upload "$RELEASE_TAG" \
-            "$NAGA_DMG_FILE" "$NAGA_DMG_FILE.sha256" \
-            --repo "$GITHUB_REPOSITORY" --clobber
+          GITHUB_TOKEN: ${{ github.token }}
+        run: npm run release

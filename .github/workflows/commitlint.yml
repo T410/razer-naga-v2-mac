@@ -1,24 +1,26 @@
 name: Commitlint
 
-on: [push]
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, edited, ready_for_review]
 
 permissions:
   contents: read
 
 concurrency:
-  group: commitlint-${{ github.ref }}
+  group: commitlint-pr-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
   commitlint:
-    if: github.event.deleted == false
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Check out the pushed commit and history
+      - name: Check out the PR commit and history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -28,21 +30,8 @@ jobs:
           node-version: '24'
           cache: npm
 
-      - name: Install commitlint
+      - name: Install commit tooling
         run: npm ci --ignore-scripts --no-audit --no-fund
 
-      - name: Validate commit messages
-        env:
-          BEFORE_SHA: ${{ github.event.before }}
-          AFTER_SHA: ${{ github.sha }}
-        run: |
-          if git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
-            range="${BEFORE_SHA}..${AFTER_SHA}"
-          else
-            # New branches or unavailable history after a force push: check all reachable commits.
-            range="$AFTER_SHA"
-          fi
-          git rev-list --reverse "$range" > "$RUNNER_TEMP/commitlint-revisions"
-          while IFS= read -r revision; do
-            git show -s --format=%B "$revision" | npm run commitlint -- --verbose
-          done < "$RUNNER_TEMP/commitlint-revisions"
+      - name: Validate PR commits and squash message
+        run: npm run lint:pr

@@ -54,7 +54,7 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test
 
 Or open `Naga.xcodeproj`: **Naga** runs with the device; **Naga Preview** runs without hardware access or persistent profiles. Automated tests use simulated devices.
 
-To create a local DMG, run `zsh Scripts/package-dmg.sh`. The [release workflow](.github/workflows/release-dmg.yml) also builds and attaches a DMG and SHA-256 file when a release is published. Use a tag such as `v0.1.2` or `v0.1.3-beta.1` from a commit containing the workflow.
+To create a local DMG, run `zsh Scripts/package-dmg.sh`. Pull requests run the tests and validate DMG packaging. After a merge to `main`, the [release workflow](.github/workflows/release-dmg.yml) chooses the next version, builds the app, pushes its version tag and publishes a GitHub release with the DMG and SHA-256 file.
 
 For contribution setup and Angular commit rules, see [CONTRIBUTING.md](CONTRIBUTING.md).
 

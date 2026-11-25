@@ -1,6 +1,7 @@
 .build/
 .swiftpm/
 node_modules/
+__pycache__/
 build/
 .DS_Store
 xcuserdata/

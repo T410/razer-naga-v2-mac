@@ -1,6 +1,6 @@
 # Contributing
 
-Build and test the app with the commands in [README.md](README.md). Node.js 24 and npm are needed only for commit message checks, not for the Swift app.
+Build and test the app with the commands in [README.md](README.md). Node.js 24 and npm are needed only for commit and release tooling, not for the Swift app.
 
 ## Commit messages
 
@@ -25,4 +25,26 @@ npm ci --ignore-scripts
 git log -1 --format=%B | npm run commitlint -- --verbose
 ```
 
-The [Commitlint workflow](.github/workflows/commitlint.yml) runs on pushes and checks every commit in the pushed range. For a new branch, or when the previous commit is unavailable after a force push, it checks the full reachable history. Standard Git merge/revert messages are ignored by commitlint's default rules.
+## Pull requests
+
+Submit changes to `main` through a pull request. Squash merge using the PR title and body as the final commit message; check the merge dialog because repository defaults may use individual commit messages instead. The [Commitlint workflow](.github/workflows/commitlint.yml) checks every PR commit and the proposed squash message, including title/body edits. It does not run on tag pushes.
+
+[CI](.github/workflows/ci.yml) also checks release tooling, runs the Swift tests and builds and verifies a DMG before merging. The PR checks are `commitlint`, `Release tooling` and `Tests and DMG`.
+
+## Releases
+
+Every merge to `main` creates a release using semantic-release and the Angular commit message:
+
+| Change | Version bump |
+|---|---|
+| `BREAKING CHANGE:` footer | Major |
+| `feat` | Minor |
+| Other allowed types | Patch |
+
+The highest bump wins when a release contains multiple commits. Existing `vX.Y.Z` tags determine the previous version. Tags and releases are produced by CI; do not push version tags manually.
+
+The release job reruns the tests, chooses the next version, updates bundle metadata in its temporary checkout, builds and verifies the Apple Silicon DMG, then pushes the tag and publishes the release with the DMG and checksum. It uses `GITHUB_TOKEN`; no personal access token or npm publication is needed. It does not push version-only commits to `main`.
+
+Versioning and packaging run together, so publishing does not depend on a second workflow being triggered by a bot-created tag or release. Release comments and issue creation are disabled.
+
+Run the release tooling checks locally with `npm run test:release`. Local app builds use the metadata in `Resources/Info.plist`; CI supplies the release version automatically.

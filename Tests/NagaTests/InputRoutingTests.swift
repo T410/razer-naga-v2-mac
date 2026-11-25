@@ -46,10 +46,20 @@ private func markerEvent(usage: UInt8, down: Bool, nanos: UInt64) throws -> CGEv
     let router = InputRouter(startAutomatically: false, emit: deliveries.emit)
     router.configure([0x40: .mouseButton(.button4)])
     let down = try markerEvent(usage: 0x40, down: true, nanos: 1_000_000_000)
-    DispatchQueue.global().asyncAfter(deadline: .now() + .milliseconds(3)) {
+    var waits = 0
+    let filtered = router.filter(.keyDown, down, waitForEdge: { condition, _ in
+        waits += 1
+        // Deliver the mouse callback only after the keyboard event starts waiting,
+        // releasing the condition just as NSCondition.wait does in production.
+        condition.unlock()
+        defer { condition.lock() }
         router.receive(usage: 0x40, down: true, nanos: 1_000_000_000)
-    }
-    #expect(router.filter(.keyDown, down) == nil)
+        return true
+    })
+    #expect(waits == 1)
+    #expect(filtered == nil)
+    #expect(deliveries.values.count == 1)
+    #expect(router.filter(.keyDown, down, waitForEdge: { _, _ in false }) != nil)
     #expect(deliveries.values.count == 1)
     router.receive(usage: 0x40, down: false, nanos: 1_100_000_000)
     #expect(router.filter(.keyUp, try markerEvent(usage: 0x40, down: false, nanos: 1_100_000_000)) == nil)
