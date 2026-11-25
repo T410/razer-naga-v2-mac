@@ -1,0 +1,17 @@
+Razer NAGA v2 — Installation
+
+Supported hardware: Razer Naga V2 HyperSpeed (RZ01-0360) with its 2.4 GHz USB receiver, USB ID 1532:00B4. Bluetooth and other mouse models are not supported. Connect only one compatible receiver.
+
+1. Quit any running copy of Naga.
+2. Drag Razer NAGA v2.app into the Applications folder in this window.
+3. Open the app from Applications.
+4. Follow the permission setup started by the app. Login approval, Accessibility and Input Monitoring (if needed) are handled in sequence. Grant access in the macOS dialogs; setup continues automatically when you return from System Settings.
+5. Connect the USB receiver and turn on the mouse in 2.4 GHz mode.
+
+Use Complete Permissions in the lower-left corner if access is missing. If a previous request needs renewal, the app asks before resetting only its own relevant permission decision and reopening itself. You do not need to select the app in Finder. macOS permission dialogs use the system language.
+
+Existing profiles and backups are preserved. The app creates its own login registration and runs in the background on later logins. Change this with Start at Login in the app or menu bar menu.
+
+You can eject the disk image after installation.
+
+This software is distributed under the MIT License. See LICENSE.txt in this disk image for the copyright and license notice. A license copy is also included in the app's Resources folder.

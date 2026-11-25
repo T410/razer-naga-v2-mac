@@ -1,0 +1,72 @@
+name: Release DMG
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-dmg-${{ github.event.release.id }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: Build and upload Apple Silicon DMG
+    runs-on: macos-26
+    timeout-minutes: 20
+    env:
+      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+      RELEASE_TAG: ${{ github.event.release.tag_name }}
+    steps:
+      - name: Check out the release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Set the release version
+        id: version
+        shell: python
+        run: |
+          import os
+          import plistlib
+          import re
+          from pathlib import Path
+
+          version = os.environ["RELEASE_TAG"].removeprefix("v")
+          match = re.fullmatch(
+              r"((?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*))"
+              r"(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?", version
+          )
+          if not match:
+              raise SystemExit("Use a release tag such as v0.1.2 or v0.1.2-beta.1.")
+          plist_path = Path("Resources/Info.plist")
+          info = plistlib.loads(plist_path.read_bytes())
+          info["CFBundleShortVersionString"] = match.group(1)
+          info["CFBundleVersion"] = os.environ["GITHUB_RUN_NUMBER"]
+          plist_path.write_bytes(plistlib.dumps(info, sort_keys=False))
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write(f"version={version}\n")
+
+      - name: Run tests
+        run: swift test
+
+      - name: Build and verify the DMG
+        env:
+          NAGA_DMG_FILE: ${{ github.workspace }}/build/Razer NAGA v2-${{ steps.version.outputs.version }}-arm64.dmg
+        run: |
+          zsh Scripts/package-dmg.sh
+          lipo -verify_arch arm64 "build/Razer NAGA v2.app/Contents/MacOS/Naga"
+          cd build
+          shasum -a 256 -c "${NAGA_DMG_FILE##*/}.sha256"
+
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NAGA_DMG_FILE: ${{ github.workspace }}/build/Razer NAGA v2-${{ steps.version.outputs.version }}-arm64.dmg
+        run: |
+          gh release upload "$RELEASE_TAG" \
+            "$NAGA_DMG_FILE" "$NAGA_DMG_FILE.sha256" \
+            --repo "$GITHUB_REPOSITORY" --clobber

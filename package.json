@@ -1,0 +1,17 @@
+{
+  "name": "razer-naga-v2-mac",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Commit message tooling for the native macOS app",
+  "license": "MIT",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "commitlint": "commitlint"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "21.2.4",
+    "@commitlint/config-angular": "21.2.4"
+  }
+}
