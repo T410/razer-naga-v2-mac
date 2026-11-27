@@ -44,10 +44,16 @@ enum LoginItem {
         UserDefaults.standard.set(enabled, forKey: "launchAtLoginEnabled")
     }
 
-    static func isBackgroundLaunch(arguments: [String], event: NSAppleEventDescriptor?) -> Bool {
-        if arguments.contains("--background") { return true }
-        guard event?.eventID == kAEOpenApplication else { return false }
-        return event?.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
-            || event?.paramDescriptor(forKeyword: keyAELaunchedAsLogInItem)?.booleanValue == true
+    static func shouldOpenWindowAtLaunch(arguments: [String], event: NSAppleEventDescriptor?, isHidden: Bool = false) -> Bool {
+        guard !arguments.contains("--background"), !isHidden else { return false }
+        if ["--show-window", "--preview", "--state-directory", "--permission-relaunch"].contains(where: arguments.contains) {
+            return true
+        }
+        // A login item can start without an Apple event. Require an explicit
+        // open request before presenting a window on an ordinary launch.
+        guard let event, event.eventClass == kCoreEventClass, event.eventID == kAEOpenApplication else { return false }
+        return event.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue != keyAELaunchedAsLogInItem
+            && event.paramDescriptor(forKeyword: keyAELaunchedAsLogInItem) == nil
+            && event.attributeDescriptor(forKeyword: keyAELaunchedAsLogInItem) == nil
     }
 }

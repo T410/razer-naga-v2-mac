@@ -77,7 +77,12 @@ final class AppModel: ObservableObject {
     var inputRoutingReady: Bool { router.ready }
 
     func actionNeedsMac(_ control: UInt8) -> Bool {
-        action(for: control).needsMac || applicationProfiles.contains { $0.assignments.contains { $0.id == control } }
+        if editingApplication, hasApplicationOverride(for: control) { return true }
+        if defaultAction(for: control).needsMac { return true }
+        guard applicationProfiles.contains(where: { $0.assignments.contains { $0.id == control } }) else { return false }
+        guard let profile, let hardware,
+              let plan = try? ApplyPlan(profile: profile, baseline: hardware, applicationProfiles: applicationProfiles) else { return true }
+        return plan.applicationTriggers.contains { $0.control == control }
     }
 
     func configureLaunchAtLogin() {
@@ -245,8 +250,8 @@ final class AppModel: ObservableObject {
                 if let committed = committed, !committed.recognizesDPIConfiguration(state) {
                     appliedDPI = nil
                 }
-                if let committed = committed, let triggers = committed.applicationTriggers,
-                   committed.verifiedSoftwareControls(in: state).count != triggers.count + committed.routes.count {
+                if let committed = committed,
+                   committed.verifiedSoftwareControls(in: state).count != committed.routingControlCount {
                     requiresApplicationApply = true
                     setCommitted(nil)
                     notice = "The profile triggers on the mouse have changed. Click Apply to enable the profiles again."
@@ -279,18 +284,22 @@ final class AppModel: ObservableObject {
         } else {
             draft = try state.makeProfile(label: { KeyLabels.label($0) })
             appliedDPI = nil
-            if let saved, let triggers = saved.applicationTriggers {
+            if let saved, saved.routingControlCount > 0 {
                 let matching = saved.verifiedSoftwareControls(in: state)
                 for assignment in saved.profile.assignments where matching.contains(assignment.id) {
                     if let index = draft.assignments.firstIndex(where: { $0.id == assignment.id }) {
                         draft.assignments[index] = assignment
                     }
                 }
-                if matching.count == triggers.count + saved.routes.count { verified = saved }
+                if matching.count == saved.routingControlCount { verified = saved }
                 else { needsApply = true }
             }
             if needsApply { notice = "The profile triggers on the mouse have changed. Click Apply to enable the profiles again." }
             else if saved != nil { notice = "The mouse has different settings. You can load the Mac backup from the Restore menu." }
+        }
+        if verified?.canStoreMoreDefaultsOnMouse == true {
+            needsApply = true
+            notice = "Click Apply to store more default button assignments directly on the mouse."
         }
         profile = draft; loadedProfile = draft
         loadApplications(saved?.applicationProfiles ?? [])
@@ -341,7 +350,8 @@ final class AppModel: ObservableObject {
         let focus = profiles.isEmpty ? nil : app.map { ApplicationFocus(app: $0, checkWine: wineFocusTimer != nil) }
         let matched = focus?.match(in: profiles)
         if activeApplicationName != matched?.name { activeApplicationName = matched?.name }
-        router.configure(committed.inputActions(for: matched?.id), focusPID: profiles.isEmpty ? nil : app?.processIdentifier)
+        router.configure(committed.inputActions(for: matched?.id), native: committed.nativeInputActions(for: matched?.id),
+                         focusPID: profiles.isEmpty ? nil : app?.processIdentifier)
         requestDPI(connected && profiles.contains { $0.dpi != nil } ? (matched?.dpi ?? committed.profile.dpi) : nil)
     }
 

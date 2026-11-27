@@ -69,6 +69,15 @@ public enum ButtonAction: Codable, Equatable, Sendable {
         return false
     }
 
+    var hardwareFunction: [UInt8]? {
+        switch self {
+        case .original: return nil
+        case .disabled: return .init(repeating: 0, count: 7)
+        case .shortcut(let shortcut): return shortcut.hardwareFunction
+        case .mouseButton(let button): return button.hardwareFunction
+        }
+    }
+
     func validate() throws {
         if case .shortcut(let shortcut) = self {
             guard shortcut.keyCode < 128, !shortcut.keyLabel.isEmpty, shortcut.modifiers.rawValue & 0xe0 == 0 else {

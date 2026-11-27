@@ -26,7 +26,8 @@ private func connectionFixture(emit: @escaping (ButtonAction, Bool, Bool, pid_t?
     let (model, router, saved) = try connectionFixture { action, down, _, _ in if down { actions.append(action) } }
     defer { model.shutdown() }
     #expect(model.connected)
-    #expect(model.actionNeedsMac(0x49))
+    #expect(!model.actionNeedsMac(0x49))
+    #expect(model.canApply)
     model.completeRefresh(.failure(NagaError.status(3)), receiverPresent: true, silent: true)
     #expect(!model.connected)
     #expect(model.error == nil)

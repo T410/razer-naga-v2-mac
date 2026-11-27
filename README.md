@@ -21,7 +21,7 @@ The app reads the mouse's serial number to match profiles and backups. It is not
 - Per-application button and DPI profiles for macOS and Wine apps.
 - Backups before writes, readback verification and restore.
 
-Assignments marked **Stored on Mouse** work with Naga closed. **Runs on Mac** assignments and automatic application switching require Naga to stay open. Battery status and macros are not implemented.
+When you click **Apply**, Naga saves **Default** button assignments marked **Stored on Mouse** to the mouse's onboard memory. They work with Naga closed. Assignments marked **Runs on Mac** and per-application button overrides are handled by Naga and require it to stay open. Battery status and macros are not implemented.
 
 ## Install
 

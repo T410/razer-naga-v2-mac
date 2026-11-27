@@ -79,3 +79,33 @@ public struct ApplicationTrigger: Codable, Equatable, Sendable {
         }
     }
 }
+
+/// A default action the receiver can emit directly. Keyboard usages must be
+/// unique on the receiver, since modifier flags can include other held keys.
+public enum NativeInput: Hashable, Sendable {
+    case keyboard(UInt8)
+    case mouseButton(MouseButtonAction)
+
+    init?(hardwareFunction: [UInt8]) {
+        if let button = MouseButtonAction(hardwareFunction: hardwareFunction) {
+            self = .mouseButton(button)
+        } else if hardwareFunction.count == 7, hardwareFunction[0] == 2,
+                  [1, 2].contains(hardwareFunction[1]), hardwareFunction[2] & 0xf0 == 0,
+                  hardwareFunction[4...6].allSatisfy({ $0 == 0 }),
+                  HIDKeys.keyCode(for: hardwareFunction[3]) != nil {
+            self = .keyboard(hardwareFunction[3])
+        } else { return nil }
+    }
+
+    static func uniqueInputs(in bindings: [HardwareBinding]) -> [UInt8: Self] {
+        var inputs: [UInt8: Self] = [:]
+        var counts: [Self: Int] = [:]
+        for binding in bindings {
+            if let input = Self(hardwareFunction: binding.function) {
+                inputs[binding.control] = input
+                counts[input, default: 0] += 1
+            }
+        }
+        return inputs.filter { counts[$0.value] == 1 }
+    }
+}

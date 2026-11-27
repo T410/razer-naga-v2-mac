@@ -2,9 +2,6 @@ import SwiftUI
 import NagaCore
 import ServiceManagement
 
-private typealias MenuState<Value> = SwiftUI.State<Value>
-private let showMainWindow = Notification.Name("Naga.showMainWindow")
-
 @main
 struct NagaApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
@@ -37,24 +34,22 @@ struct NagaApp: App {
         MenuBarExtra {
             MenuContent(model: model)
         } label: {
-            LaunchMenuLabel()
+            LaunchMenuLabel(delegate: delegate)
         }
     }
 }
 
 private struct LaunchMenuLabel: View {
+    @ObservedObject var delegate: AppDelegate
     @Environment(\.openWindow) private var openWindow
-    @MenuState private var launched = false
+    @State private var lastWindowRequest = 0
     var body: some View {
         Image(systemName: AppIdentity.symbol)
-            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didFinishLaunchingNotification)) { _ in openAtLaunch() }
-            .onReceive(NotificationCenter.default.publisher(for: showMainWindow)) { _ in openWindow(id: "main") }
-            .onAppear { if NSApp.isRunning { openAtLaunch() } }
-    }
-    private func openAtLaunch() {
-        guard !launched else { return }
-        launched = true
-        if !AppDelegate.backgroundLaunch { openWindow(id: "main") }
+            .onReceive(delegate.$windowOpenRequest) { request in
+                guard request != lastWindowRequest else { return }
+                lastWindowRequest = request
+                openWindow(id: "main")
+            }
     }
 }
 
@@ -75,15 +70,20 @@ private struct MenuContent: View {
     }
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     @MainActor static weak var model: AppModel?
-    @MainActor static var backgroundLaunch = false
-    func applicationWillFinishLaunching(_ notification: Notification) {
-        Self.backgroundLaunch = LoginItem.isBackgroundLaunch(arguments: CommandLine.arguments, event: NSAppleEventManager.shared().currentAppleEvent)
-        if Self.backgroundLaunch { NSApp.setActivationPolicy(.accessory) }
+    @Published private(set) var windowOpenRequest = 0
+    private var showWindowOnActivation = false
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        showWindowOnActivation = LoginItem.shouldOpenWindowAtLaunch(arguments: CommandLine.arguments,
+            event: NSAppleEventManager.shared().currentAppleEvent, isHidden: NSApp.isHidden)
+        if !showWindowOnActivation { NSApp.setActivationPolicy(.accessory) }
+        Self.model?.configureLaunchAtLogin()
+        openRequestedWindowIfActive(NSApp)
     }
-    func applicationDidFinishLaunching(_ notification: Notification) { Self.model?.configureLaunchAtLogin() }
     func applicationDidBecomeActive(_ notification: Notification) {
+        openRequestedWindowIfActive(NSApp)
         Self.model?.beginPermissionSetup()
         Self.model?.refresh(silent: true)
     }
@@ -100,10 +100,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) { Self.model?.shutdown() }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag {
+            showWindowOnActivation = true
             sender.setActivationPolicy(.regular)
-            NotificationCenter.default.post(name: showMainWindow, object: nil)
+            openRequestedWindowIfActive(sender)
         }
         return true
+    }
+
+    private func openRequestedWindowIfActive(_ application: NSApplication) {
+        // Launch Services can send an open event for hidden launches too.
+        guard showWindowOnActivation, application.isActive else { return }
+        showWindowOnActivation = false
+        windowOpenRequest += 1
     }
 }
 

@@ -19,12 +19,14 @@ public struct SavedProfile: Codable, Sendable {
         try profile.validate(); try hardware.validate()
         let triggers = applicationTriggers ?? []
         let applicationControls = try ApplicationProfile.controls(in: applicationProfiles ?? [])
+        let markerControls = Set(triggers.map(\.control))
         let macAssignments = profile.assignments.filter { $0.action.needsMac && !applicationControls.contains($0.id) }
         let usages = routes.map(\.usage) + triggers.map(\.usage)
         guard profile.serial == hardware.serial, routes.count == macAssignments.count,
               Set(usages).count == usages.count,
               Set(routes.map(\.control)) == Set(macAssignments.map(\.id)),
-              triggers.count == applicationControls.count, Set(triggers.map(\.control)) == applicationControls,
+              triggers.count == markerControls.count, markerControls.isSubset(of: applicationControls),
+              Set(nativeInputs(in: hardware).keys) == applicationControls.subtracting(markerControls),
               !profile.assignments.contains(where: { applicationControls.contains($0.id) && $0.action == .original }) else {
             throw NagaError.storage("The Mac profile does not match the mouse backup.")
         }
@@ -51,10 +53,47 @@ public struct SavedProfile: Codable, Sendable {
         return actions
     }
 
+    public func nativeInputActions(for target: ApplicationProfile.Target?) -> [NativeInput: ButtonAction] {
+        guard let overrides = applicationProfiles?.first(where: { $0.id == target })?.assignments,
+              !overrides.isEmpty else { return [:] }
+        let inputs = nativeInputs(in: hardware)
+        return Dictionary(uniqueKeysWithValues: overrides.compactMap { assignment in
+            inputs[assignment.id].map { ($0, assignment.action) }
+        })
+    }
+
+    public var routingControlCount: Int { routes.count + applicationControls.count }
+
+    public var canStoreMoreDefaultsOnMouse: Bool {
+        guard let applicationTriggers, !applicationTriggers.isEmpty,
+              let plan = try? ApplyPlan(profile: profile, baseline: hardware,
+                                        applicationProfiles: applicationProfiles ?? []) else { return false }
+        let plannedMarkers = Set(plan.applicationTriggers.map(\.control))
+        return applicationTriggers.contains { !plannedMarkers.contains($0.control) }
+    }
+
+    private var applicationControls: Set<UInt8> {
+        Set((applicationProfiles ?? []).flatMap(\.assignments).map(\.id))
+    }
+
+    private func nativeInputs(in state: DeviceState) -> [UInt8: NativeInput] {
+        let controls = applicationControls.subtracting((applicationTriggers ?? []).map(\.control))
+        guard !controls.isEmpty else { return [:] }
+        let unique = NativeInput.uniqueInputs(in: state.bindings)
+        return Dictionary(uniqueKeysWithValues: profile.assignments.compactMap { assignment in
+            let control = assignment.id
+            guard controls.contains(control), let input = unique[control],
+                  let expected = assignment.action.hardwareFunction, let actual = try? state.function(control),
+                  HardwareBinding.equivalent(actual, expected) else { return nil }
+            return (control, input)
+        })
+    }
+
     public func verifiedSoftwareControls(in state: DeviceState) -> Set<UInt8> {
         guard state.serial == hardware.serial else { return [] }
         let legacy = routes.map { ApplicationTrigger(control: $0.control, usage: $0.usage) }
-        return Set((legacy + (applicationTriggers ?? [])).filter { $0.matches(state) }.map(\.control))
+        let markers = (legacy + (applicationTriggers ?? [])).filter { $0.matches(state) }.map(\.control)
+        return Set(markers).union(nativeInputs(in: state).keys)
     }
 
     public func recognizesDPIConfiguration(_ state: DeviceState) -> Bool {
