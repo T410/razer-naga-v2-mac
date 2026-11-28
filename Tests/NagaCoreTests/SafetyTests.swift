@@ -139,6 +139,50 @@ private func mouseTiltProfile(_ state: DeviceState) throws -> MouseProfile {
     #expect(mouse.writes.isEmpty)
 }
 
+@Test func nativeDefaultMigrationKeepsProfileOverridesOnTheMac() throws {
+    var state = try fixture()
+    var profile = try state.makeProfile(label: { "Key \($0)" })
+    let shortcut = Shortcut(keyCode: 123, modifiers: .control, keyLabel: "←")
+    let gameAction = ButtonAction.shortcut(Shortcut(keyCode: 38, keyLabel: "J"))
+    let otherAction = ButtonAction.shortcut(Shortcut(keyCode: 8, keyLabel: "C"))
+    let disabled: UInt8 = 0x40
+    let buttonTen: UInt8 = 0x49
+    for (control, action, marker): (UInt8, ButtonAction, UInt8) in [
+        (disabled, .disabled, 0x6d), (buttonTen, .shortcut(shortcut), 0x40)
+    ] {
+        let index = try #require(profile.assignments.firstIndex { $0.id == control })
+        profile.assignments[index].action = action
+        let binding = try #require(state.bindings.firstIndex { $0.control == control })
+        state.bindings[binding].function = [2, 2, 0, marker, 0, 0, 0]
+    }
+    var game = ApplicationProfile(target: .bundleIdentifier("com.example.Game"), name: "Game")
+    game.assignments = [Assignment(id: disabled, action: otherAction), Assignment(id: buttonTen, action: gameAction)]
+    let legacy = SavedProfile(profile: profile, hardware: state, routes: [], applicationProfiles: [game], applicationTriggers: [
+        ApplicationTrigger(control: disabled, usage: 0x6d), ApplicationTrigger(control: buttonTen, usage: 0x40)
+    ])
+    try legacy.validate()
+    #expect(legacy.canStoreMoreDefaultsOnMouse)
+    let repo = try repository()
+    try repo.save(legacy)
+    let mouse = SimulatedMouse(state)
+    let writer = ConfigurationWriter(io: mouse, repository: repo)
+
+    let saved = try writer.apply(profile, expected: state, applicationProfiles: [game])
+    #expect(mouse.writes.count == 1)
+    #expect(mouse.writes.first?.payload[1] == buttonTen)
+    #expect(try saved.hardware.function(buttonTen) == shortcut.hardwareFunction)
+    #expect(!saved.canStoreMoreDefaultsOnMouse)
+    #expect(saved.inputActions(for: nil) == [0x6d: .disabled])
+    #expect(saved.nativeInputActions(for: nil).isEmpty)
+    #expect(saved.nativeInputActions(for: game.id) == [.keyboard(0x50): gameAction])
+    #expect(saved.verifiedSoftwareControls(in: saved.hardware) == [disabled, buttonTen])
+
+    game.assignments[1].action = otherAction
+    let updated = try writer.apply(profile, expected: saved.hardware, applicationProfiles: [game])
+    #expect(mouse.writes.count == 1)
+    #expect(updated.nativeInputActions(for: game.id) == [.keyboard(0x50): otherAction])
+}
+
 @Test func focusChangesSwapTheWholeDPITableAndKeepTheSavedDefaultAndPreviousBackup() throws {
     let state = try fixture()
     let mouse = SimulatedMouse(state)

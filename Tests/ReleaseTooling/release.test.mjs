@@ -108,6 +108,9 @@ test('release dry run uses v1.0.0 as its base without creating tags', async () =
   // test runner process so it cannot intercept the test reporter's IPC stream.
   const env = { ...process.env, NAGA_TEST_REPO: repo, NAGA_TEST_REMOTE: pathToFileURL(remote).href };
   delete env.NODE_TEST_CONTEXT;
+  // Resolve the branch from the test repository instead of the enclosing CI run.
+  delete env.CI;
+  delete env.GITHUB_ACTIONS;
   const output = execFileSync(process.execPath, ['--input-type=module', '-e', `
     import semanticRelease from 'semantic-release';
     import { PassThrough } from 'node:stream';

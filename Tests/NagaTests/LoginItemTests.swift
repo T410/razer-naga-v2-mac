@@ -1,3 +1,4 @@
+import Carbon
 import Foundation
 import ServiceManagement
 import Testing
@@ -5,6 +6,33 @@ import Testing
 
 private func loginDefaults() -> UserDefaults {
     UserDefaults(suiteName: "NagaLoginItemTests-" + UUID().uuidString)!
+}
+
+private func openApplicationEvent() -> NSAppleEventDescriptor {
+    NSAppleEventDescriptor(eventClass: AEEventClass(kCoreEventClass), eventID: AEEventID(kAEOpenApplication),
+        targetDescriptor: nil, returnID: AEReturnID(kAutoGenerateReturnID), transactionID: AETransactionID(kAnyTransactionID))
+}
+
+@Test func loginWithoutAnAppleEventDoesNotOpenAWindow() {
+    #expect(!LoginItem.shouldOpenWindowAtLaunch(arguments: ["Naga"], event: nil))
+}
+
+@Test func loginAppleEventsDoNotOpenAWindow() {
+    let event = openApplicationEvent()
+    event.setParam(NSAppleEventDescriptor(enumCode: OSType(keyAELaunchedAsLogInItem)), forKeyword: AEKeyword(keyAEPropData))
+    #expect(!LoginItem.shouldOpenWindowAtLaunch(arguments: ["Naga"], event: event))
+
+    let markedEvent = openApplicationEvent()
+    markedEvent.setParam(NSAppleEventDescriptor.null(), forKeyword: AEKeyword(keyAELaunchedAsLogInItem))
+    #expect(!LoginItem.shouldOpenWindowAtLaunch(arguments: ["Naga"], event: markedEvent))
+}
+
+@Test func manualLaunchOpensItsWindowUnlessLaunchedHidden() {
+    let event = openApplicationEvent()
+    #expect(LoginItem.shouldOpenWindowAtLaunch(arguments: ["Naga"], event: event))
+    #expect(!LoginItem.shouldOpenWindowAtLaunch(arguments: ["Naga"], event: event, isHidden: true))
+    #expect(!LoginItem.shouldOpenWindowAtLaunch(arguments: ["Naga", "--background"], event: event))
+    #expect(LoginItem.shouldOpenWindowAtLaunch(arguments: ["Naga", "--show-window"], event: nil))
 }
 
 @Test(arguments: [SMAppService.Status.notRegistered, .notFound])

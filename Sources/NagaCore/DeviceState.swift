@@ -144,33 +144,45 @@ public struct ApplyPlan: Sendable {
         guard profile.serial == baseline.serial else { throw NagaError.invalid("This profile belongs to a different mouse.") }
         let applicationControls = try ApplicationProfile.controls(in: applicationProfiles)
         var desired: [UInt8: [UInt8]] = [:]
-        var local: [Assignment] = []
-        for assignment in profile.assignments.sorted(by: { $0.id < $1.id }) {
-            if applicationControls.contains(assignment.id) {
-                guard assignment.action != .original else {
+        for assignment in profile.assignments {
+            if assignment.action == .original {
+                if applicationControls.contains(assignment.id) {
                     let title = MouseControl.all.first { $0.id == assignment.id }?.title ?? "Button"
                     throw NagaError.invalid("First choose a default assignment for \(title) under Button Assignments.")
                 }
-                local.append(assignment)
-                continue
-            }
-            switch assignment.action {
-            case .original: desired[assignment.id] = try baseline.function(assignment.id)
-            case .disabled: desired[assignment.id] = .init(repeating: 0, count: 7)
-            case .mouseButton(let button): desired[assignment.id] = button.hardwareFunction
-            case .shortcut(let shortcut):
-                if let f = shortcut.hardwareFunction { desired[assignment.id] = f }
-                else { local.append(assignment) }
+                desired[assignment.id] = try baseline.function(assignment.id)
+            } else {
+                desired[assignment.id] = assignment.action.hardwareFunction
             }
         }
+        let dpiBindings = try [UInt8(0x0b), UInt8(0x0c)].map { id in
+            HardwareBinding(control: id, function: try baseline.function(id))
+        }
+        let defaultBindings = desired.map { HardwareBinding(control: $0.key, function: $0.value) } + dpiBindings
+        let nativeInputs = NativeInput.uniqueInputs(in: defaultBindings)
+        let local = profile.assignments.filter { assignment in
+            assignment.action.needsMac || (applicationControls.contains(assignment.id) && nativeInputs[assignment.id] == nil)
+        }.sorted { $0.id < $1.id }
+        for assignment in local { desired.removeValue(forKey: assignment.id) }
+
         // Reserved trigger usages never overlap direct firmware keyboard outputs.
         // They are still matched to this physical mouse before suppression.
-        var occupied = Set(desired.values.compactMap { f in f[0] == 2 ? f[3] : nil })
-        for id: UInt8 in [0x0b, 0x0c] { let f = try baseline.function(id); if f[0] == 2 { occupied.insert(f[3]) } }
+        let remainingFunctions = Array(desired.values) + dpiBindings.map(\.function)
+        var occupied = Set(remainingFunctions.compactMap { $0[0] == 2 ? $0[3] : nil })
+        var existingMarkers: [UInt8: UInt8] = [:]
+        for assignment in local {
+            let current = try baseline.function(assignment.id)
+            let usage = current[3]
+            if HIDKeys.markerCandidates.contains(usage),
+               HardwareBinding.equivalent(current, ApplicationTrigger(control: assignment.id, usage: usage).hardwareFunction),
+               occupied.insert(usage).inserted {
+                existingMarkers[assignment.id] = usage
+            }
+        }
         var routes: [LocalRoute] = []
         var applicationTriggers: [ApplicationTrigger] = []
         for assignment in local {
-            guard let marker = HIDKeys.markerCandidates.first(where: { !occupied.contains($0) }) else {
+            guard let marker = existingMarkers[assignment.id] ?? HIDKeys.markerCandidates.first(where: { !occupied.contains($0) }) else {
                 throw NagaError.invalid("There are not enough independent triggers for assignments that run on the Mac.")
             }
             occupied.insert(marker)
